@@ -1,0 +1,112 @@
+diff -u -r -N a/scrutiny/collector/pkg/collector/metrics.go b/scrutiny/collector/pkg/collector/metrics.go
+--- a/scrutiny/collector/pkg/collector/metrics.go	2024-09-03 19:33:16.485950608 -0700
++++ b/scrutiny/collector/pkg/collector/metrics.go	2024-09-04 15:08:49.473312046 -0700
+@@ -134,9 +134,14 @@
+ 	resultBytes := []byte(result)
+ 	if err != nil {
+ 		if exitError, ok := err.(*exec.ExitError); ok {
+-			// smartctl command exited with an error, we should still push the data to the API server
+-			mc.logger.Errorf("smartctl returned an error code (%d) while processing %s\n", exitError.ExitCode(), deviceName)
+-			mc.LogSmartctlExitCode(exitError.ExitCode())
++			// ASH: We know that the Samsung USB flash drives always return a
++			// failed checksum error with smartctl. Just ignore these errors
++			// and move on.
++			if !strings.HasPrefix(deviceName, "sd-Flash_Drive_FIT_") {
++				// smartctl command exited with an error, we should still push the data to the API server
++				mc.logger.Errorf("smartctl returned an error code (%d) while processing %s\n", exitError.ExitCode(), deviceName)
++				mc.LogSmartctlExitCode(exitError.ExitCode())
++			}
+ 			mc.Publish(deviceWWN, resultBytes)
+ 		} else {
+ 			mc.logger.Errorf("error while attempting to execute smartctl: %s\n", deviceName)
+diff -u -r -N a/scrutiny/collector/pkg/detect/detect.go b/scrutiny/collector/pkg/detect/detect.go
+--- a/scrutiny/collector/pkg/detect/detect.go	2024-09-03 19:33:16.485950608 -0700
++++ b/scrutiny/collector/pkg/detect/detect.go	2024-09-04 15:08:58.349558121 -0700
+@@ -90,6 +90,22 @@
+ 		device.Manufacturer = availableDeviceInfo.Vendor
+ 	}
+ 
++	// ASH: Handle Samsung USB flash drives better since their info is burried
++	// in a different set of fields and also all of them map to the very same
++	// and incorrect serial number.
++	if len(device.Manufacturer) == 0 {
++		device.Manufacturer = availableDeviceInfo.ScsiVendor
++	}
++	if len(device.ModelName) == 0 {
++		device.ModelName = availableDeviceInfo.ScsiProduct
++	}
++	if device.SerialNumber == "AA00000000000489" && device.Manufacturer == "Samsung" && device.ModelName == "Flash Drive FIT" {
++		// The device path string contains the serial number of the device
++		// Use this instead of the incorrect shared serial number.
++		deviceNameSplit := strings.Split(device.DeviceName, "_")
++		device.SerialNumber = deviceNameSplit[len(deviceNameSplit)-1]
++	}
++
+ 	//populate WWN is possible if present
+ 	if availableDeviceInfo.Wwn.Naa != 0 { //valid values are 1-6 (5 is what we handle correctly)
+ 		d.Logger.Info("Generating WWN")
+@@ -142,7 +158,10 @@
+ 	//now tha we've "grouped" all the devices, lets override any groups specified in the config file.
+ 
+ 	for _, overrideDevice := range d.Config.GetDeviceOverrides() {
+-		overrideDeviceFile := strings.ToLower(overrideDevice.Device)
++		// ASH: Do not convert the device path to lower case, as it's just
++		// unecessary and it breaks when we mount the device node using a
++		// custom path through docker.
++		overrideDeviceFile := overrideDevice.Device
+ 
+ 		if overrideDevice.Ignore {
+ 			// this device file should be deleted if it exists
+diff -u -r -N a/scrutiny/collector/pkg/detect/devices_linux.go b/scrutiny/collector/pkg/detect/devices_linux.go
+--- a/scrutiny/collector/pkg/detect/devices_linux.go	2024-09-03 19:33:16.485950608 -0700
++++ b/scrutiny/collector/pkg/detect/devices_linux.go	2024-09-04 15:09:19.002130709 -0700
+@@ -36,10 +36,28 @@
+ 	block, err := ghw.Block()
+ 	if err == nil {
+ 		for _, disk := range block.Disks {
+-			if disk.Name == detectedDevice.DeviceName && strings.ToLower(disk.WWN) != "unknown" {
+-				d.Logger.Debugf("Found matching block device. WWN: %s", disk.WWN)
+-				detectedDevice.WWN = disk.WWN
+-				break
++			// ASH: Extend the WWN matching based on not just the name of the
++			// disk, but also based on either model or vendor in combination
++			// with the serial number of the device.
++			foundMatch := false
++
++			if disk.Name == detectedDevice.DeviceName {
++				d.Logger.Debugf("Found matching block device using device name. WWN: %s", disk.WWN)
++				foundMatch = true
++			} else if disk.Model == detectedDevice.ModelName && disk.SerialNumber == detectedDevice.SerialNumber {
++				d.Logger.Debugf("Found matching block device using model and serial number. WWN: %s", disk.WWN)
++				foundMatch = true
++			} else if disk.Vendor == detectedDevice.Manufacturer && disk.SerialNumber == detectedDevice.SerialNumber {
++				d.Logger.Debugf("Found matching block device using vendor/manufacturer and serial number. WWN: %s", disk.WWN)
++				foundMatch = true
++			}
++			if foundMatch {
++				if strings.ToLower(disk.WWN) == "unknown" {
++					d.Logger.Warn("WWN is unknown for the matching entry from ghw block/disk info")
++				} else {
++					detectedDevice.WWN = disk.WWN
++					break
++				}
+ 			}
+ 		}
+ 	}
+diff -u -r -N a/scrutiny/webapp/backend/pkg/models/collector/smart.go b/scrutiny/webapp/backend/pkg/models/collector/smart.go
+--- a/scrutiny/webapp/backend/pkg/models/collector/smart.go	2024-09-03 19:33:16.501951057 -0700
++++ b/scrutiny/webapp/backend/pkg/models/collector/smart.go	2024-09-04 15:09:28.270387689 -0700
+@@ -235,6 +235,13 @@
+ 	ScsiVersion         string              `json:"scsi_version"`
+ 	ScsiGrownDefectList int64               `json:"scsi_grown_defect_list"`
+ 	ScsiErrorCounterLog ScsiErrorCounterLog `json:"scsi_error_counter_log"`
++	// ASH: Extra fields added to retrieve information about the
++	// device when the same is not available or sometimes incorrect
++	// in the standard equivalents.
++	ScsiVendor          string              `json:"scsi_vendor"`
++	ScsiProduct         string              `json:"scsi_product"`
++	ScsiModelName       string              `json:"scsi_model_name"`
++	ScsiRevision        string              `json:"scsi_revision"`
+ }
+ 
+ // Capacity finds the total capacity of the device in bytes, or 0 if unknown.
