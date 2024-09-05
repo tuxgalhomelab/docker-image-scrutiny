@@ -13,6 +13,12 @@ set_umask() {
     umask 0002
 }
 
+clear_env() {
+    unset SCRUTINY_UI_API_ENDPOINT
+    unset SCRUTINY_INFLUXDB_HOST
+    unset SCRUTINY_INFLUXDB_PORT
+}
+
 run_scrutiny_collector() {
     scrutiny-collector run --config ${scrutiny_config:?}
 }
@@ -46,10 +52,11 @@ version: 1
 host:
   id: dummy-host
 api:
-  endpoint: http://127.0.0.1:8080
+  endpoint: ${SCRUTINY_UI_API_ENDPOINT:-http://127.0.0.1:8080}
 EOF
     fi
 
+    clear_env
     run_scrutiny_collector_loop "${interval:?}"
 }
 
@@ -75,11 +82,12 @@ web:
       path: /opt/scrutiny/web
   influxdb:
     scheme: http
-    host: 127.0.0.1
-    port: 8086
+    host: ${SCRUTINY_INFLUXDB_HOST:-127.0.0.1}
+    port: ${SCRUTINY_INFLUXDB_PORT:-8086}
 EOF
     fi
 
+    clear_env
     exec scrutiny-web start --config ${scrutiny_config:?}
 }
 
