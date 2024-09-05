@@ -42,5 +42,10 @@ test_start_container() {
         --name ${container_name:?} \
         --rm \
         ${IMAGE:?} \
-        scrutiny-collector-metrics --version
+        scrutiny-web --version
+    docker run \
+        --name ${container_name:?} \
+        --rm \
+        ${IMAGE:?} \
+        scrutiny-collector --version
 }

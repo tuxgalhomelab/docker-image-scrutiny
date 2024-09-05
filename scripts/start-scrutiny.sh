@@ -14,7 +14,7 @@ set_umask() {
 }
 
 run_scrutiny_collector() {
-    scrutiny-collector-metrics run --config ${scrutiny_config:?}
+    scrutiny-collector run --config ${scrutiny_config:?}
 }
 
 run_scrutiny_collector_loop() {
@@ -45,9 +45,6 @@ start_scrutiny_collector() {
 version: 1
 host:
   id: dummy-host
-log:
-  file: /dev/stdout
-  level: INFO
 api:
   endpoint: http://127.0.0.1:8080
 EOF
@@ -58,8 +55,32 @@ EOF
 
 start_scrutiny_ui() {
     logInfo "Starting Scrutiny UI ..."
-    # TODO: Not yet supported.
-    exit 1
+
+    logInfo "Checking for existing Scrutiny UI config ..."
+    if [ -f "${scrutiny_config:?}" ]; then
+        logInfo "Existing Scrutiny UI configuration \"${scrutiny_config:?}\" found"
+    else
+        logInfo "Generating Scrutiny UI configuration at ${scrutiny_config:?}"
+        cat << EOF > ${scrutiny_config:?}
+version: 1
+web:
+  listen:
+    port: 8080
+    host: 0.0.0.0
+    basepath: ''
+  database:
+    location: /data/scrutiny/data/scrutiny.db
+  src:
+    frontend:
+      path: /opt/scrutiny/web
+  influxdb:
+    scheme: http
+    host: 127.0.0.1
+    port: 8086
+EOF
+    fi
+
+    exec scrutiny-web start --config ${scrutiny_config:?}
 }
 
 start_scrutiny() {
