@@ -37,15 +37,55 @@ package_current_release_version() {
 }
 
 test_start_container() {
-    local container_name="${1:?}"
+    local collector_container_name="$(test_random_container_name)"
+    local ui_container_name="$(test_random_container_name)"
+    local influxdb_container_name="$(test_random_container_name)"
+
+    echo "Starting influxdb container ${influxdb_container_name:?} ..."
     docker run \
-        --name ${container_name:?} \
+        --name ${influxdb_container_name:?} \
+        --detach \
         --rm \
-        ${IMAGE:?} \
-        scrutiny-web --version
+        influxdb:2
+    sleep 3
+
+    echo "Starting Scrutiny UI container ${ui_container_name:?} ..."
     docker run \
-        --name ${container_name:?} \
+        --name ${ui_container_name:?} \
+        --detach \
         --rm \
+        --env SCRUTINY_INFLUXDB_HOST="$(container_ip ${influxdb_container_name:?})" \
+        --env SCRUTINY_INFLUXDB_PORT="8086" \
         ${IMAGE:?} \
-        scrutiny-collector --version
+        start-scrutiny ui
+    sleep 3
+
+    echo "Starting Scrutiny Collector container ${collector_container_name:?} ..."
+    docker run \
+        --name ${collector_container_name:?} \
+        --detach \
+        --rm \
+        --env SCRUTINY_UI_API_ENDPOINT="http://$(container_ip ${ui_container_name:?}):8080" \
+        ${IMAGE:?} \
+        start-scrutiny collector 5sec
+    sleep 30
+
+    local failed="false"
+
+    if [ "$(docker inspect -f '{{.State.Running}}' "${influxdb_container_name:?}" 2>/dev/null)" != "true" ]; then
+        failed=true
+        echo "Test Failed: Influxdb container is not running!"
+    fi
+    if [ "$(docker inspect -f '{{.State.Running}}' "${ui_container_name:?}" 2>/dev/null)" != "true" ]; then
+        failed=true
+        echo "Test Failed: Scrutiny UI container is not running!"
+    fi
+    if [ "$(docker inspect -f '{{.State.Running}}' "${collector_container_name:?}" 2>/dev/null)" != "true" ]; then
+        failed=true
+        echo "Test Failed: Scrutiny Collector container is not running!"
+    fi
+
+    test_cleanup_container "${collector_container_name:?}"
+    test_cleanup_container "${ui_container_name:?}"
+    test_cleanup_container "${influxdb_container_name:?}"
 }
