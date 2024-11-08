@@ -32,8 +32,8 @@ jobs:
 
       - name: Configure git author info
         run: |
-          git config user.name 'Tuxdude'
-          git config user.email '1243873+Tuxdude@users.noreply.github.com'
+          git config user.name 'tuxgal'
+          git config user.email '186847929+tuxgal@users.noreply.github.com'
 
       - name: Update Latest Upstream version locally
         run: make update_latest_upstream
