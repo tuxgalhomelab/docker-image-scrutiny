@@ -56,12 +56,8 @@ jobs:
       - name: Set up makesystem
         run: make makesystem_install
 
-      - name: Disable Experimental Docker Daemon
+      - name: Show Docker version
         run: |
-          sudo jq '.experimental = false' < /etc/docker/daemon.json > /tmp/docker.json
-          sudo mv /tmp/docker.json /etc/docker/daemon.json
-          sudo cat /etc/docker/daemon.json
-          sudo service docker restart
           docker version
           docker info
 
