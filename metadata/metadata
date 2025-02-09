@@ -5,35 +5,103 @@ set -E -e -o pipefail
 
 BASE_IMAGE_CONFIG_KEY_PREFIX="BASE_IMAGE"
 
-RELEASE_PACKAGE_NAME="Scrutiny"
-RELEASE_TAG_PACKAGE_NAME="scrutiny"
-
-UPSTREAM_PACKAGE_NAME="Scrutiny"
-UPSTREAM_VERSION_CONFIG_KEY="SCRUTINY_VERSION"
-UPSTREAM_GIT_REPO="https://github.com/AnalogJ/scrutiny"
+UPSTREAM_PACKAGE_NAME="Scrutiny/Go/nvm/Node.js"
+UPSTREAM_SCRUTINY_VERSION_CONFIG_KEY="SCRUTINY_VERSION"
+UPSTREAM_SCRUTINY_GIT_REPO="https://github.com/AnalogJ/scrutiny"
 GIT_REPO_TAGS_CUSTOM_FILTERING_REGEX='^v.+\-rc.+$'
+UPSTREAM_GO_IMAGE_NAME_CONFIG_KEY="GO_IMAGE_NAME"
+UPSTREAM_GO_IMAGE_TAG_CONFIG_KEY="GO_IMAGE_TAG"
+UPSTREAM_GO_IMAGE_PATTERN="^[0-9]+\.[0-9]+\.[0-9]+-go-.+$"
+UPSTREAM_NVM_VERSION_CONFIG_KEY="NVM_VERSION"
+UPSTREAM_NODEJS_VERSION_CONFIG_KEY="IMAGE_NODEJS_VERSION"
+UPSTREAM_NVM_CHECKSUM_CONFIG_KEY="NVM_SHA256_CHECKSUM"
+UPSTREAM_NVM_GIT_REPO="https://github.com/nvm-sh/nvm"
+
+RELEASE_PACKAGE_NAME="Scrutiny"
+RELEASE_PACKAGE_VERSION_CONFIG_KEY="SCRUTINY_VERSION"
+RELEASE_TAG_PACKAGE_NAME="scrutiny"
 
 TEST_TYPE="foreground"
 TEST_CONTAINER_TYPE="scrutiny"
 
+current_scrutiny_version() {
+    get_config_arg ${UPSTREAM_SCRUTINY_VERSION_CONFIG_KEY:?}
+}
+
+current_go_image_version() {
+    get_config_arg ${UPSTREAM_GO_IMAGE_TAG_CONFIG_KEY:?}
+}
+
+current_nvm_version() {
+    get_config_arg ${UPSTREAM_NVM_VERSION_CONFIG_KEY:?}
+}
+
+current_node_version() {
+    get_config_arg ${UPSTREAM_NODEJS_VERSION_CONFIG_KEY:?}
+}
+
 current_upstream_version() {
-    get_config_arg ${UPSTREAM_VERSION_CONFIG_KEY:?}
+    local scrutiny_ver="$(current_scrutiny_version)"
+    local go_image_ver="$(current_go_image_version)"
+    local nvm_ver="$(current_nvm_version)"
+    local node_ver="$(current_node_version)"
+    echo "${scrutiny_ver:?}/${go_image_ver:?}/${nvm_ver:?}/${node_ver:?}"
+}
+
+latest_scrutiny_version() {
+    git_remote_repo_latest_tag "${UPSTREAM_SCRUTINY_GIT_REPO:?}"
+}
+
+latest_go_image_version() {
+    dockerhub_latest_tag \
+        "$(get_config_arg ${UPSTREAM_GO_IMAGE_NAME_CONFIG_KEY:?})" \
+        "${UPSTREAM_GO_IMAGE_PATTERN:?}"
+}
+
+latest_nvm_version() {
+    git_remote_repo_latest_tag "${UPSTREAM_NVM_GIT_REPO:?}"
+}
+
+latest_node_version() {
+    curl --silent --fail --location --show-error https://nodejs.org/dist/index.tab | \
+        tail -n+2 | \
+        cut -d $'\t' -f 1 | \
+        sort --version-sort --reverse | \
+        head -1
 }
 
 latest_upstream_version() {
-    git_remote_repo_latest_tag "${UPSTREAM_GIT_REPO:?}"
+    local scrutiny_ver="$(latest_scrutiny_version)"
+    local go_image_ver="$(latest_go_image_version)"
+    local nvm_ver="$(latest_nvm_version)"
+    local node_ver="$(latest_node_version)"
+    echo "${scrutiny_ver:?}/${go_image_ver:?}/${nvm_ver:?}/${node_ver:?}"
 }
 
 update_latest_upstream_version() {
     local cur_ver="${1:?}"
     local latest_ver="${2:?}"
-    echo "Updating ${UPSTREAM_PACKAGE_NAME:?} ${UPSTREAM_VERSION_CONFIG_KEY:?} '${cur_ver:?}' -> '${latest_ver:?}'"
-    set_config_arg "${UPSTREAM_VERSION_CONFIG_KEY:?}" "${latest_ver:?}"
+    local cur_scrutiny_ver="$(echo "${cur_ver:?}" | cut -d '/' -f 1)"
+    local cur_go_ver="$(echo "${cur_ver:?}" | cut -d '/' -f 2)"
+    local cur_nvm_ver="$(echo "${cur_ver:?}" | cut -d '/' -f 3)"
+    local cur_node_ver="$(echo "${cur_ver:?}" | cut -d '/' -f 4)"
+    local latest_scrutiny_ver="$(echo "${latest_ver:?}" | cut -d '/' -f 1)"
+    local latest_go_ver="$(echo "${latest_ver:?}" | cut -d '/' -f 2)"
+    local latest_nvm_ver="$(echo "${latest_ver:?}" | cut -d '/' -f 3)"
+    local latest_node_ver="$(echo "${latest_ver:?}" | cut -d '/' -f 4)"
+    local latest_nvm_sha256_checksum="$(github_repo_archive_sha256_checksum ${UPSTREAM_NVM_GIT_REPO:?} ${latest_nvm_ver:?})"
+
+    echo "Updating ${UPSTREAM_PACKAGE_NAME:?} ${UPSTREAM_SCRUTINY_VERSION_CONFIG_KEY:?}/${UPSTREAM_GO_IMAGE_TAG_CONFIG_KEY}/${UPSTREAM_NVM_VERSION_CONFIG_KEY:?}/${UPSTREAM_NODEJS_VERSION_CONFIG_KEY:?} '${cur_ver:?}' -> '${latest_ver:?}'"
+    set_config_arg "${UPSTREAM_SCRUTINY_VERSION_CONFIG_KEY:?}" "${latest_scrutiny_ver:?}"
+    set_config_arg "${UPSTREAM_GO_IMAGE_TAG_CONFIG_KEY:?}" "${latest_go_ver:?}"
+    set_config_arg "${UPSTREAM_NVM_VERSION_CONFIG_KEY:?}" "${latest_nvm_ver:?}"
+    set_config_arg "${UPSTREAM_NVM_CHECKSUM_CONFIG_KEY:?}" "${latest_nvm_sha256_checksum:?}"
+    set_config_arg "${UPSTREAM_NODEJS_VERSION_CONFIG_KEY:?}" "${latest_node_ver:?}"
     git add ${ARGS_FILE:?}
 }
 
 package_current_release_version() {
-    current_upstream_version
+    get_config_arg "${RELEASE_PACKAGE_VERSION_CONFIG_KEY:?}"
 }
 
 test_start_container() {
