@@ -65,6 +65,8 @@ latest_nvm_version() {
 latest_node_version() {
     curl --silent --fail --location --show-error https://nodejs.org/dist/index.tab | \
         tail -n+2 | \
+        cut -d $'\t' -f '1,10' | \
+        grep -v '-' | \
         cut -d $'\t' -f 1 | \
         sort --version-sort --reverse | \
         head -1
