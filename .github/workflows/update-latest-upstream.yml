@@ -35,6 +35,11 @@ jobs:
           git config user.name 'tuxgal'
           git config user.email '186847929+tuxgal@users.noreply.github.com'
 
+      - name: Install skopeo
+        run: |
+          sudo apt-get update
+          sudo apt-get install skopeo
+
       - name: Update Latest Upstream version locally
         run: make update_latest_upstream
 
