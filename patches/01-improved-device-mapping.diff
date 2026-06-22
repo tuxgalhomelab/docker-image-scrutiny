@@ -1,7 +1,7 @@
 diff -u -r -N a/scrutiny/collector/pkg/collector/metrics.go b/scrutiny/collector/pkg/collector/metrics.go
---- a/scrutiny/collector/pkg/collector/metrics.go	2024-09-03 19:33:16.485950608 -0700
-+++ b/scrutiny/collector/pkg/collector/metrics.go	2024-09-04 15:08:49.473312046 -0700
-@@ -134,9 +134,14 @@
+--- a/scrutiny/collector/pkg/collector/metrics.go	2026-06-21 21:09:37.391980859 -0700
++++ b/scrutiny/collector/pkg/collector/metrics.go	2026-06-21 21:16:47.286518260 -0700
+@@ -147,9 +147,14 @@
  	resultBytes := []byte(result)
  	if err != nil {
  		if exitError, ok := err.(*exec.ExitError); ok {
@@ -16,13 +16,13 @@ diff -u -r -N a/scrutiny/collector/pkg/collector/metrics.go b/scrutiny/collector
 +				mc.logger.Errorf("smartctl returned an error code (%d) while processing %s\n", exitError.ExitCode(), deviceName)
 +				mc.LogSmartctlExitCode(exitError.ExitCode())
 +			}
- 			mc.Publish(deviceWWN, resultBytes)
+ 			mc.Publish(scrutiny_uuid, resultBytes)
  		} else {
  			mc.logger.Errorf("error while attempting to execute smartctl: %s\n", deviceName)
 diff -u -r -N a/scrutiny/collector/pkg/detect/detect.go b/scrutiny/collector/pkg/detect/detect.go
---- a/scrutiny/collector/pkg/detect/detect.go	2024-09-03 19:33:16.485950608 -0700
-+++ b/scrutiny/collector/pkg/detect/detect.go	2024-09-04 15:08:58.349558121 -0700
-@@ -90,6 +90,22 @@
+--- a/scrutiny/collector/pkg/detect/detect.go	2026-06-21 21:09:37.391980859 -0700
++++ b/scrutiny/collector/pkg/detect/detect.go	2026-06-21 21:10:27.857150323 -0700
+@@ -91,6 +91,22 @@
  		device.Manufacturer = availableDeviceInfo.Vendor
  	}
  
@@ -45,7 +45,7 @@ diff -u -r -N a/scrutiny/collector/pkg/detect/detect.go b/scrutiny/collector/pkg
  	//populate WWN is possible if present
  	if availableDeviceInfo.Wwn.Naa != 0 { //valid values are 1-6 (5 is what we handle correctly)
  		d.Logger.Info("Generating WWN")
-@@ -142,7 +158,10 @@
+@@ -146,7 +162,10 @@
  	//now tha we've "grouped" all the devices, lets override any groups specified in the config file.
  
  	for _, overrideDevice := range d.Config.GetDeviceOverrides() {
@@ -58,9 +58,9 @@ diff -u -r -N a/scrutiny/collector/pkg/detect/detect.go b/scrutiny/collector/pkg
  		if overrideDevice.Ignore {
  			// this device file should be deleted if it exists
 diff -u -r -N a/scrutiny/collector/pkg/detect/devices_linux.go b/scrutiny/collector/pkg/detect/devices_linux.go
---- a/scrutiny/collector/pkg/detect/devices_linux.go	2024-09-03 19:33:16.485950608 -0700
-+++ b/scrutiny/collector/pkg/detect/devices_linux.go	2024-09-04 15:09:19.002130709 -0700
-@@ -36,10 +36,28 @@
+--- a/scrutiny/collector/pkg/detect/devices_linux.go	2026-06-21 21:09:37.391980859 -0700
++++ b/scrutiny/collector/pkg/detect/devices_linux.go	2026-06-21 21:10:27.857150323 -0700
+@@ -37,10 +37,28 @@
  	block, err := ghw.Block()
  	if err == nil {
  		for _, disk := range block.Disks {
@@ -94,9 +94,9 @@ diff -u -r -N a/scrutiny/collector/pkg/detect/devices_linux.go b/scrutiny/collec
  		}
  	}
 diff -u -r -N a/scrutiny/webapp/backend/pkg/models/collector/smart.go b/scrutiny/webapp/backend/pkg/models/collector/smart.go
---- a/scrutiny/webapp/backend/pkg/models/collector/smart.go	2024-09-03 19:33:16.501951057 -0700
-+++ b/scrutiny/webapp/backend/pkg/models/collector/smart.go	2024-09-04 15:09:28.270387689 -0700
-@@ -235,6 +235,13 @@
+--- a/scrutiny/webapp/backend/pkg/models/collector/smart.go	2026-06-21 21:09:37.399981037 -0700
++++ b/scrutiny/webapp/backend/pkg/models/collector/smart.go	2026-06-21 21:10:27.857150323 -0700
+@@ -242,6 +242,13 @@
  	ScsiVersion         string              `json:"scsi_version"`
  	ScsiGrownDefectList int64               `json:"scsi_grown_defect_list"`
  	ScsiErrorCounterLog ScsiErrorCounterLog `json:"scsi_error_counter_log"`
@@ -109,4 +109,4 @@ diff -u -r -N a/scrutiny/webapp/backend/pkg/models/collector/smart.go b/scrutiny
 +	ScsiRevision        string              `json:"scsi_revision"`
  }
  
- // Capacity finds the total capacity of the device in bytes, or 0 if unknown.
+ type SmartSupport struct {
